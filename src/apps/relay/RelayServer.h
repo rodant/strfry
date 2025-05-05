@@ -84,6 +84,10 @@ struct MsgReqWorker : NonCopyable {
         Subscription sub;
     };
 
+    struct CountSub {
+        Subscription sub;
+    };
+
     struct RemoveSub {
         uint64_t connId;
         SubId subId;
@@ -93,7 +97,7 @@ struct MsgReqWorker : NonCopyable {
         uint64_t connId;
     };
 
-    using Var = std::variant<NewSub, RemoveSub, CloseConn>;
+    using Var = std::variant<NewSub, CountSub, RemoveSub, CloseConn>;
     Var msg;
     MsgReqWorker(Var &&msg_) : msg(std::move(msg_)) {}
 };

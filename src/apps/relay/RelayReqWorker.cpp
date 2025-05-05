@@ -15,6 +15,15 @@ void RelayServer::runReqWorker(ThreadPool<MsgReqWorker>::Thread &thr) {
         tpReqMonitor.dispatch(sub.connId, MsgReqMonitor{MsgReqMonitor::NewSub{std::move(sub)}});
     };
 
+    queries.onCount = [&](lmdb::txn &txn, const auto &sub, uint64_t count) {
+        auto reply = tao::json::value::array({
+            "COUNT",
+            sub.subId.str(),
+            tao::json::value::object({ {"count", count} })
+        });
+        sendToConn(sub.connId, tao::json::to_string(reply));
+    };
+
     while(1) {
         auto newMsgs = queries.running.empty() ? thr.inbox.pop_all() : thr.inbox.pop_all_no_wait();
 
@@ -28,6 +37,16 @@ void RelayServer::runReqWorker(ThreadPool<MsgReqWorker>::Thread &thr) {
                     sendNoticeError(connId, std::string("too many concurrent REQs"));
                 }
 
+                queries.process(txn);
+            } else if (auto msg = std::get_if<MsgReqWorker::CountSub>(&newMsg.msg)) {
+                auto connId = msg->sub.connId;
+                
+                if (!queries.addSub(txn, std::move(msg->sub))) {
+                    sendNoticeError(connId, std::string("too many concurrent REQs"));
+                } /*else {
+                    queries.onCount(txn, msg->sub, countByFilter(txn, msg->sub.filterGroup.filters[0]));
+                    queries.removeSub(connId, msg->sub.subId);
+                }*/
                 queries.process(txn);
             } else if (auto msg = std::get_if<MsgReqWorker::RemoveSub>(&newMsg.msg)) {
                 queries.removeSub(msg->connId, msg->subId);

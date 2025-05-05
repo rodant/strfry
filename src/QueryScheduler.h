@@ -7,6 +7,7 @@ struct QueryScheduler : NonCopyable {
     std::function<void(lmdb::txn &txn, const Subscription &sub, uint64_t levId, std::string_view eventPayload)> onEvent;
     std::function<void(lmdb::txn &txn, const Subscription &sub, const std::vector<uint64_t> &levIds)> onEventBatch;
     std::function<void(lmdb::txn &txn, Subscription &sub)> onComplete;
+    std::function<void(lmdb::txn &txn, const Subscription &sub, uint64_t count)> onCount;
 
     // If false, then levIds returned to above callbacks can be stale (because they were deleted)
     // If false, then onEvent's eventPayload will always be ""
@@ -79,6 +80,8 @@ struct QueryScheduler : NonCopyable {
         }
 
         auto eventPayloadCursor = lmdb::cursor::open(txn, env.dbi_EventPayload);
+        int64_t count = 0;
+        bool countOnly = onCount ? true : false;
 
         bool complete = q->process(txn, [&](const auto &sub, uint64_t levId){
             std::string_view eventPayload;
@@ -90,7 +93,8 @@ struct QueryScheduler : NonCopyable {
 
             if (onEvent) onEvent(txn, sub, levId, eventPayload);
             if (onEventBatch) levIdBatch.push_back(levId);
-        }, cfg().relay__queryTimesliceBudgetMicroseconds, cfg().relay__logging__dbScanPerf);
+            if (onCount) count++;
+        }, cfg().relay__queryTimesliceBudgetMicroseconds, cfg().relay__logging__dbScanPerf, countOnly);
 
         if (onEventBatch) {
             onEventBatch(txn, q->sub, levIdBatch);
@@ -102,6 +106,8 @@ struct QueryScheduler : NonCopyable {
             removeSub(connId, q->sub.subId);
 
             if (onComplete) onComplete(txn, q->sub);
+
+            if (countOnly) onCount(txn, q->sub, count);
 
             delete q;
         } else {
