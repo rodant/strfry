@@ -35,7 +35,7 @@ void RelayServer::runIngester(ThreadPool<MsgIngester>::Thread &thr) {
                                                false, std::string("invalid: ") + e.what());
                                 if (cfg().relay__logging__invalidEvents) LI << "Rejected invalid event: " << e.what();
                             }
-                        } else if (cmd == "REQ") {
+                        } else if (cmd == "REQ" || cmd == "COUNT") {
                             if (cfg().relay__logging__dumpInReqs) LI << "[" << msg->connId << "] dumpInReq: " << msg->payload; 
 
                             try {
@@ -128,7 +128,11 @@ void RelayServer::ingesterProcessReq(lmdb::txn &txn, uint64_t connId, const tao:
 
     Subscription sub(connId, jsonGetString(arr[1], "REQ subscription id was not a string"), NostrFilterGroup(arr));
 
-    tpReqWorker.dispatch(connId, MsgReqWorker{MsgReqWorker::NewSub{std::move(sub)}});
+    if (arr[0] == "REQ") {
+        tpReqWorker.dispatch(connId, MsgReqWorker{MsgReqWorker::NewSub{std::move(sub)}});
+    } else if (arr[0] == "COUNT") {
+        tpReqWorker.dispatch(connId, MsgReqWorker{MsgReqWorker::CountSub{std::move(sub)}});
+    }
 }
 
 void RelayServer::ingesterProcessClose(lmdb::txn &txn, uint64_t connId, const tao::json::value &arr) {
