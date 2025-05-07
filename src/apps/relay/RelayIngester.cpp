@@ -36,12 +36,20 @@ void RelayServer::runIngester(ThreadPool<MsgIngester>::Thread &thr) {
                                 if (cfg().relay__logging__invalidEvents) LI << "Rejected invalid event: " << e.what();
                             }
                         } else if (cmd == "REQ") {
-                            if (cfg().relay__logging__dumpInReqs) LI << "[" << msg->connId << "] dumpInReq: " << msg->payload; 
+                            if (cfg().relay__logging__dumpInReqs) LI << "[" << msg->connId << "] dumpInReq: " << msg->payload;
 
                             try {
                                 ingesterProcessReq(txn, msg->connId, arr);
                             } catch (std::exception &e) {
                                 sendNoticeError(msg->connId, std::string("bad req: ") + e.what());
+                            }
+                        } else if (cmd == "COUNT") {
+                            if (cfg().relay__logging__dumpInReqs) LI << "[" << msg->connId << "] dumpInCount: " << msg->payload;
+
+                            try {
+                                ingesterProcessCount(txn, msg->connId, arr);
+                            } catch (std::exception &e) {
+                                sendNoticeError(msg->connId, std::string("bad count: ") + e.what());
                             }
                         } else if (cmd == "CLOSE") {
                             if (cfg().relay__logging__dumpInReqs) LI << "[" << msg->connId << "] dumpInReq: " << msg->payload; 
@@ -127,6 +135,16 @@ void RelayServer::ingesterProcessReq(lmdb::txn &txn, uint64_t connId, const tao:
     if (arr.get_array().size() > 2 + cfg().relay__maxReqFilterSize) throw herr("arr too big");
 
     Subscription sub(connId, jsonGetString(arr[1], "REQ subscription id was not a string"), NostrFilterGroup(arr));
+
+    tpReqWorker.dispatch(connId, MsgReqWorker{MsgReqWorker::NewSub{std::move(sub)}});
+}
+
+void RelayServer::ingesterProcessCount(lmdb::txn &txn, uint64_t connId, const tao::json::value &arr) {
+    if (arr.get_array().size() < 2 + 1) throw herr("arr too small");
+    if (arr.get_array().size() > 2 + cfg().relay__maxReqFilterSize) throw herr("arr too big");
+
+    Subscription sub(connId, jsonGetString(arr[1], "COUNT subscription id was not a string"), NostrFilterGroup(arr));
+    sub.isCount = true;  // Set the count flag
 
     tpReqWorker.dispatch(connId, MsgReqWorker{MsgReqWorker::NewSub{std::move(sub)}});
 }

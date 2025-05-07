@@ -5,14 +5,53 @@
 void RelayServer::runReqWorker(ThreadPool<MsgReqWorker>::Thread &thr) {
     Decompressor decomp;
     QueryScheduler queries;
+    
+    // For COUNT requests, keep track of the count
+    using CountKey = std::pair<uint64_t, SubId>;
+    flat_hash_map<CountKey, uint64_t> countResults;
+    
+    auto makeCountKey = [](const Subscription &sub) {
+        return std::make_pair(sub.connId, sub.subId);
+    };
 
     queries.onEvent = [&](lmdb::txn &txn, const auto &sub, uint64_t levId, std::string_view eventPayload){
-        sendEvent(sub.connId, sub.subId, decodeEventPayload(txn, decomp, eventPayload, nullptr, nullptr));
+        if (sub.isCount) {
+            // For COUNT requests, increment the counter instead of sending events
+            auto key = makeCountKey(sub);
+            
+            // If key doesn't exist yet, it will be created with value 0, then incremented
+            // This is more explicit than relying on default construction behavior
+            if (countResults.find(key) == countResults.end()) {
+                countResults[key] = 1;
+            } else {
+                countResults[key]++;
+            }
+        } else {
+            // For normal REQ requests, send events as usual
+            sendEvent(sub.connId, sub.subId, decodeEventPayload(txn, decomp, eventPayload, nullptr, nullptr));
+        }
     };
 
     queries.onComplete = [&](lmdb::txn &, Subscription &sub){
-        sendToConn(sub.connId, tao::json::to_string(tao::json::value::array({ "EOSE", sub.subId.str() })));
-        tpReqMonitor.dispatch(sub.connId, MsgReqMonitor{MsgReqMonitor::NewSub{std::move(sub)}});
+        if (sub.isCount) {
+            // For COUNT requests, send the count result
+            auto key = makeCountKey(sub);
+            
+            // Get the count (if the key doesn't exist, this will default to 0)
+            uint64_t count = 0;
+            if (countResults.find(key) != countResults.end()) {  // Compatible with all C++ standards
+                count = countResults[key];
+                countResults.erase(key);  // Clean up the entry
+            }
+            
+            // Send COUNT response: ["COUNT", subscription_id, count]
+            auto reply = tao::json::value::array({ "COUNT", sub.subId.str(), count });
+            sendToConn(sub.connId, tao::json::to_string(reply));
+        } else {
+            // For normal REQ requests, send EOSE and add to monitor as usual
+            sendToConn(sub.connId, tao::json::to_string(tao::json::value::array({ "EOSE", sub.subId.str() })));
+            tpReqMonitor.dispatch(sub.connId, MsgReqMonitor{MsgReqMonitor::NewSub{std::move(sub)}});
+        }
     };
 
     while(1) {
