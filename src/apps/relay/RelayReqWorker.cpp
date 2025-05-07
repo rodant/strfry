@@ -43,10 +43,7 @@ void RelayServer::runReqWorker(ThreadPool<MsgReqWorker>::Thread &thr) {
                 
                 if (!queries.addSub(txn, std::move(msg->sub))) {
                     sendNoticeError(connId, std::string("too many concurrent REQs"));
-                } /*else {
-                    queries.onCount(txn, msg->sub, countByFilter(txn, msg->sub.filterGroup.filters[0]));
-                    queries.removeSub(connId, msg->sub.subId);
-                }*/
+                }
                 queries.process(txn);
             } else if (auto msg = std::get_if<MsgReqWorker::RemoveSub>(&newMsg.msg)) {
                 queries.removeSub(msg->connId, msg->subId);
