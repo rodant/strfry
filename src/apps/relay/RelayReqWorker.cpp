@@ -45,7 +45,8 @@ void RelayServer::runReqWorker(ThreadPool<MsgReqWorker>::Thread &thr) {
             // Send COUNT response
             auto reply = tao::json::value::array({ "COUNT", sub.subId.str(), { { "count", count } } });
             sendToConn(sub.connId, tao::json::to_string(reply));
-            //TODO: remove subscription?
+            // COUNT requests should consider only old events, no monitoring for newer events
+            tpReqWorker.dispatch(sub.connId, MsgReqWorker{MsgReqWorker::CloseConn{sub.connId}});
         } else {
             // For normal REQ requests, send EOSE and add to monitor as usual
             sendToConn(sub.connId, tao::json::to_string(tao::json::value::array({ "EOSE", sub.subId.str() })));
