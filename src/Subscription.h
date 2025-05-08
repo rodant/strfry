@@ -58,6 +58,7 @@ struct Subscription : NonCopyable {
     // State
 
     uint64_t latestEventId = MAX_U64;
+    // TODO: this is better model as Param not state
     bool isCount = false;  // Flag to identify COUNT requests vs REQ requests
 };
 

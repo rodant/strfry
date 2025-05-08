@@ -19,8 +19,6 @@ void RelayServer::runReqWorker(ThreadPool<MsgReqWorker>::Thread &thr) {
             // For COUNT requests, increment the counter instead of sending events
             auto key = makeCountKey(sub);
             
-            // If key doesn't exist yet, it will be created with value 0, then incremented
-            // This is more explicit than relying on default construction behavior
             if (countResults.find(key) == countResults.end()) {
                 countResults[key] = 1;
             } else {
@@ -44,9 +42,10 @@ void RelayServer::runReqWorker(ThreadPool<MsgReqWorker>::Thread &thr) {
                 countResults.erase(key);  // Clean up the entry
             }
             
-            // Send COUNT response: ["COUNT", subscription_id, count]
-            auto reply = tao::json::value::array({ "COUNT", sub.subId.str(), count });
+            // Send COUNT response
+            auto reply = tao::json::value::array({ "COUNT", sub.subId.str(), { { "count", count } } });
             sendToConn(sub.connId, tao::json::to_string(reply));
+            //TODO: remove subscription?
         } else {
             // For normal REQ requests, send EOSE and add to monitor as usual
             sendToConn(sub.connId, tao::json::to_string(tao::json::value::array({ "EOSE", sub.subId.str() })));
